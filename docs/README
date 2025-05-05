@@ -1,25 +1,3 @@
-#ifndef MAIN_H
-#define MAIN_H
-
-#include <Adafruit_ADS1X15.h>
-#include <BLEDevice.h>
-#include <Preferences.h>
-#include <WiFi.h>
-
-extern bool relayStates[4];
-extern const int relayPins[4];
-extern float shuntBuffer[];
-extern float ads2Buffer[];
-extern int avgWindow;
-
-class RelayControlCallback : public BLECharacteristicCallbacks {
-    void onWrite(BLECharacteristic* pCharacteristic);
-};
-
-void connectToWifi(String ssid, String password);
-
-#endif
-
 ESP32-ADS1115 BLE Test Project
 ==============================
 
