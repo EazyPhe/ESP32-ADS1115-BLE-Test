@@ -1,0 +1,103 @@
+#ifndef MAIN_H
+#define MAIN_H
+
+#include <Adafruit_ADS1X15.h>
+#include <BLEDevice.h>
+#include <Preferences.h>
+#include <WiFi.h>
+
+extern bool relayStates[4];
+extern const int relayPins[4];
+extern float shuntBuffer[];
+extern float ads2Buffer[];
+extern int avgWindow;
+
+class RelayControlCallback : public BLECharacteristicCallbacks {
+    void onWrite(BLECharacteristic* pCharacteristic);
+};
+
+void connectToWifi(String ssid, String password);
+
+#endif
+
+ESP32-ADS1115 BLE Test Project
+==============================
+
+Overview
+--------
+This project is a modular ESP32 firmware for monitoring current and voltage using two ADS1115 ADCs, controlling relays, and communicating with a companion Android app via Bluetooth Low Energy (BLE). The firmware also supports WiFi configuration and OTA updates.
+
+Key Features
+------------
+- Current and Voltage Measurement (with calibration and averaging)
+- Four relay control (with physical feedback LED)
+- BLE communication with custom service/characteristics
+- WiFi management (scan/connect via BLE)
+- OTA updates
+- Power management (light sleep when idle)
+
+Project Structure
+-----------------
+- src/
+  - main.cpp — Main application logic, FreeRTOS tasks, and orchestration
+  - ble_module.cpp — BLE initialization, callbacks, and data notification
+  - wifi_module.cpp — WiFi scanning and connection logic
+  - adc_module.cpp — ADC initialization and calibration
+  - relay_module.cpp — Relay pin setup, state management, and feedback
+- include/
+  - ble_module.h, wifi_module.h, adc_module.h, relay_module.h — Headers for each module
+- platformio.ini — PlatformIO project configuration
+- partitions.csv — Partition table for ESP32 flash
+
+How the Code Works
+------------------
+1. Startup (setup in main.cpp):
+   - Initializes serial, I2C, NVS, and restores relay states
+   - Calls setup functions for relays, ADCs, and BLE (from modules)
+   - Performs auto-calibration
+   - Attempts WiFi connection if credentials are stored
+   - Creates FreeRTOS tasks for data acquisition, BLE communication, and monitoring
+2. Data Acquisition (adc_module.cpp):
+   - Reads current and voltage at a configurable interval
+   - Applies calibration offsets and stores values in buffers for averaging
+3. BLE Communication (ble_module.cpp):
+   - Advertises a custom BLE service with three characteristics:
+     - Data (read/notify): Sends JSON with measurements, relay states, and protocol version
+     - Relay control (write): Receives commands to toggle/set relays or change sampling rate
+     - WiFi control (read/write/notify): Handles WiFi scan/connect commands and results
+   - Handles BLE client connections and disconnections
+4. Relay Control (relay_module.cpp):
+   - Provides functions to set or toggle relay states and blink a feedback LED
+   - Relay state changes are triggered by BLE commands or restored from NVS
+5. WiFi Management (wifi_module.cpp):
+   - Scans for available networks and sends SSID+RSSI list via BLE
+   - Connects to selected network and enables OTA updates
+6. OTA and Power Management:
+   - OTA handled in the main BLE task loop
+   - Device enters light sleep when not connected via BLE
+
+How to Modify the Project
+-------------------------
+- To add new features:
+  - Create a new module (e.g., sensor_module.cpp/.h) in src/ and include/
+  - Register new BLE characteristics or commands in ble_module.cpp and update the Android app accordingly
+- To change pin assignments:
+  - Edit the relevant constants in relay_module.cpp or adc_module.cpp
+- To adjust sampling/averaging:
+  - Modify samplingIntervalMs or avgWindow in main.cpp or expose them via BLE commands
+- To add new relays or sensors:
+  - Expand the arrays and logic in the relevant module and update the BLE protocol if needed
+- To change BLE protocol/data format:
+  - Update the JSON construction in bleTask (main.cpp or ble_module.cpp) and ensure the Android app parses the new format
+- To update WiFi/OTA logic:
+  - Edit wifi_module.cpp for connection logic or add new OTA triggers
+
+Best Practices
+--------------
+- Keep each module focused on a single responsibility
+- Use header files to declare shared variables and functions
+- Document new functions and modules with comments
+- Test new features in isolation before integrating
+- Keep the Android app and ESP32 firmware in sync regarding BLE protocol and commands
+
+Note: This file is for documentation only. Do not add any C/C++ code, #include statements, or code snippets here. For header file usage, see the official GCC documentation: https://gcc.gnu.org/onlinedocs/cpp/Header-Files.html

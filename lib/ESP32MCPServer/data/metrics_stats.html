@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ESP32 MCP Server Statistics</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f0f0f0;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            margin-bottom: 20px;
+        }
+        .header h1 {
+            margin: 0;
+            color: #2c3e50;
+        }
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .card h2 {
+            margin-top: 0;
+            color: #2c3e50;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .metric:last-child {
+            border-bottom: none;
+        }
+        .metric-label {
+            font-weight: 500;
+            color: #34495e;
+        }
+        .metric-value {
+            color: #0066cc;
+            font-family: monospace;
+            font-size: 1.1em;
+        }
+        .signal-strength {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .signal-bars {
+            display: inline-flex;
+            gap: 2px;
+            height: 16px;
+            align-items: flex-end;
+        }
+        .signal-bar {
+            width: 4px;
+            background-color: #ccc;
+            border-radius: 1px;
+        }
+        .signal-bar.active {
+            background-color: #4CAF50;
+        }
+        .tab-container {
+            margin-bottom: 20px;
+        }
+        .tab-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .tab-button {
+            padding: 10px 20px;
+            border: none;
+            background: #fff;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+            color: #666;
+        }
+        .tab-button.active {
+            background: #0066cc;
+            color: white;
+        }
+        .refresh-button {
+            padding: 8px 16px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            float: right;
+        }
+        .refresh-button:hover {
+            background: #45a049;
+        }
+        .error {
+            color: #dc3545;
+        }
+        .loading {
+            opacity: 0.5;
+        }
+        @media (max-width: 600px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <button class="refresh-button" onclick="refreshStats()">
+                Refresh
+            </button>
+            <h1>System Statistics</h1>
+        </div>
+
+        <div class="tab-container">
+            <div class="tab-buttons">
+                <button class="tab-button active" onclick="showStats('current')">Current</button>
+                <button class="tab-button" onclick="showStats('boot')">Since Boot</button>
+                <button class="tab-button" onclick="showStats('all')">All Time</button>
+            </div>
+        </div>
+
+        <div class="grid">
+            <!-- Request Statistics -->
+            <div class="card">
+                <h2>Request Statistics</h2>
+                <div class="metric">
+                    <span class="metric-label">Total Requests</span>
+                    <span class="metric-value" id="total-requests">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Error Rate</span>
+                    <span class="metric-value" id="error-rate">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Timeout Rate</span>
+                    <span class="metric-value" id="timeout-rate">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Avg Response Time</span>
+                    <span class="metric-value" id="avg-response">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Max Response Time</span>
+                    <span class="metric-value" id="max-response">-</span>
+                </div>
+            </div>
+
+            <!-- System Status -->
+            <div class="card">
+                <h2>System Status</h2>
+                <div class="metric">
+                    <span class="metric-label">WiFi Signal</span>
+                    <div class="metric-value signal-strength">
+                        <div class="signal-bars" id="signal-bars"></div>
+                        <span id="signal-strength">-</span>
+                    </div>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Free Heap</span>
+                    <span class="metric-value" id="free-heap">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Min Free Heap</span>
+                    <span class="metric-value" id="min-heap">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Uptime</span>
+                    <span class="metric-value" id="uptime">-</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentTab = 'current';
+        let updateTimer = null;
+        
+        function createSignalBars() {
+            const container = document.getElementById('signal-bars');
+            for (let i = 0; i < 4; i++) {
+                const bar = document.createElement('div');
+                bar.className = 'signal-bar';
+                bar.style.height = `${(i + 1) * 4}px`;
+                container.appendChild(bar);
+            }
+        }
+        
+        function updateSignalBars(strength) {
+            const bars = document.querySelectorAll('.signal-bar');
+            const strength_abs = Math.abs(strength);
+            bars.forEach((bar, index) => {
+                if (strength_abs <= 70 && index === 3 ||
+                    strength_abs <= 80 && index <= 2 ||
+                    strength_abs <= 90 && index <= 1 ||
+                    strength_abs > 90 && index === 0) {
+                    bar.classList.add('active');
+                } else {
+                    bar.classList.remove('active');
+                }
+            });
+        }
+
+        function formatBytes(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return (bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i];
+        }
+
+        function formatDuration(ms) {
+            const seconds = Math.floor(ms / 1000);
+            const minutes = Math.floor(seconds / 60);
+            const hours = Math.floor(minutes / 60);
+            const days = Math.floor(hours / 24);
+
+            if (days > 0) return `${days}d ${hours % 24}h`;
+            if (hours > 0) return `${hours}h ${minutes % 60}m`;
+            if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
+            return `${seconds}s`;
+        }
+
+        function showStats(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab-button').forEach(button => {
+                button.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            refreshStats();
+        }
+
+        async function refreshStats() {
+            try {
+                const response = await fetch(`/api/stats?period=${currentTab}`);
+                const stats = await response.json();
+                
+                // Update request statistics
+                document.getElementById('total-requests').textContent = stats.requests.total;
+                document.getElementById('error-rate').textContent = 
+                    `${(stats.requests.errors / stats.requests.total * 100).toFixed(2)}%`;
+                document.getElementById('timeout-rate').textContent = 
+                    `${(stats.requests.timeouts / stats.requests.total * 100).toFixed(2)}%`;
+                document.getElementById('avg-response').textContent = 
+                    `${stats.requests.avg_duration.toFixed(2)}ms`;
+                document.getElementById('max-response').textContent = 
+                    `${stats.requests.max_duration.toFixed(2)}ms`;
+
+                // Update system status
+                document.getElementById('signal-strength').textContent = 
+                    `${stats.system.wifi_signal}dBm`;
+                updateSignalBars(stats.system.wifi_signal);
+                document.getElementById('free-heap').textContent = 
+                    formatBytes(stats.system.free_heap);
+                document.getElementById('min-heap').textContent = 
+                    formatBytes(stats.system.min_heap);
+                document.getElementById('uptime').textContent = 
+                    formatDuration(stats.system.uptime);
+
+            } catch (error) {
+                console.error('Error fetching stats:', error);
+            }
+        }
+
+        // Initialize
+        createSignalBars();
+        refreshStats();
+
+        // Auto-refresh every 5 seconds
+        setInterval(refreshStats, 5000);
+    </script>
+</body>
+</html>

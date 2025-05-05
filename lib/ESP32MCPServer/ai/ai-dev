@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# AI Development Helper wrapper script
+# Place this in the project root as 'ai-dev'
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PYTHON_SCRIPT="$SCRIPT_DIR/scripts/ai_dev_helper.py"
+
+# Ensure the script is executable
+chmod +x "$PYTHON_SCRIPT"
+
+# Forward all arguments to the Python script
+python3 "$PYTHON_SCRIPT" "$@"

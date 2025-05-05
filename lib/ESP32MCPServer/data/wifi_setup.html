@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ESP32 Network Setup</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { 
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f0f0f0;
+        }
+        .container {
+            max-width: 400px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        #status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .connected {
+            background: #d4edda;
+            color: #155724;
+        }
+        .connecting {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Network Setup</h2>
+        <form id="wifi-form">
+            <div class="form-group">
+                <label for="ssid">WiFi Name (SSID):</label>
+                <input type="text" id="ssid" name="ssid" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Password:</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            <button type="submit">Connect</button>
+        </form>
+        <div id="status"></div>
+    </div>
+
+    <script>
+        const form = document.getElementById('wifi-form');
+        const status = document.getElementById('status');
+        let ws = null;
+
+        function connectWebSocket() {
+            ws = new WebSocket(`ws://${window.location.hostname}/ws`);
+            
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                updateStatus(data);
+            };
+            
+            ws.onclose = function() {
+                setTimeout(connectWebSocket, 2000);
+            };
+        }
+
+        function updateStatus(data) {
+            status.innerHTML = `
+                Status: ${data.status}<br>
+                SSID: ${data.ssid}<br>
+                IP: ${data.ip}
+            `;
+            
+            status.className = '';
+            switch(data.status) {
+                case 'connected':
+                    status.classList.add('connected');
+                    break;
+                case 'connecting':
+                    status.classList.add('connecting');
+                    break;
+                case 'connection_failed':
+                    status.classList.add('error');
+                    break;
+            }
+        }
+
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(form);
+            
+            try {
+                const response = await fetch('/save', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Network configuration failed');
+                }
+                
+                status.innerHTML = 'Connecting to network...';
+                status.className = 'connecting';
+            } catch (error) {
+                status.innerHTML = error.message;
+                status.className = 'error';
+            }
+        };
+
+        // Initial status check and WebSocket connection
+        fetch('/status')
+            .then(response => response.json())
+            .then(data => {
+                updateStatus(data);
+                connectWebSocket();
+            });
+    </script>
+</body>
+</html>

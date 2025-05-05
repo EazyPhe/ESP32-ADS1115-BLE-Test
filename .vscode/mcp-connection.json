@@ -1,0 +1,18 @@
+{
+    "connections": [
+      {
+        "name": "ESP32 MCP Server",
+        "type": "websocket",
+        "url": "ws://${input:esp32IpAddress}:9000",
+        "protocol": "mcp"
+      }
+    ],
+    "inputs": [
+      {
+        "id": "esp32IpAddress",
+        "type": "promptString",
+        "description": "ESP32 IP Address",
+        "default": "10.0.0.127"
+      }
+    ]
+  }

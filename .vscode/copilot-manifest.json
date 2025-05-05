@@ -1,0 +1,101 @@
+{
+    "schema_version": "1.0",
+    "name": "ESP32 Device Control",
+    "description": "Control ESP32 with ADS1115 ADC and BLE functionality",
+    "connection": {
+      "type": "mcp",
+      "id": "ESP32 MCP Server"
+    },
+    "tools": [
+      {
+        "name": "relay.set",
+        "description": "Turn a relay on or off",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "index": {
+              "type": "integer",
+              "description": "Relay index (0-3)"
+            },
+            "state": {
+              "type": "boolean",
+              "description": "true=ON, false=OFF"
+            }
+          },
+          "required": ["index", "state"]
+        }
+      },
+      {
+        "name": "wifi.scan",
+        "description": "Scan for available WiFi networks",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      {
+        "name": "adc.calibrate",
+        "description": "Calibrate the ADC readings",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      {
+        "name": "config.set_sampling_interval",
+        "description": "Set the ADC sampling interval in milliseconds",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "interval": {
+              "type": "integer",
+              "description": "Sampling interval in milliseconds (10-10000)"
+            }
+          },
+          "required": ["interval"]
+        }
+      }
+    ],
+    "resources": [
+      {
+        "name": "adc.shunt_diff",
+        "type": "number",
+        "description": "Current shunt differential reading"
+      },
+      {
+        "name": "adc.ads2_a0",
+        "type": "number",
+        "description": "ADS1115 #2 analog reading"
+      },
+      {
+        "name": "relay.0",
+        "type": "boolean",
+        "description": "State of relay 0"
+      },
+      {
+        "name": "relay.1",
+        "type": "boolean",
+        "description": "State of relay 1"
+      },
+      {
+        "name": "relay.2",
+        "type": "boolean",
+        "description": "State of relay 2"
+      },
+      {
+        "name": "relay.3",
+        "type": "boolean",
+        "description": "State of relay 3"
+      },
+      {
+        "name": "wifi.status",
+        "type": "string",
+        "description": "WiFi connection status"
+      },
+      {
+        "name": "config.sampling_interval",
+        "type": "number",
+        "description": "Current ADC sampling interval in milliseconds"
+      }
+    ]
+  }
