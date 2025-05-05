@@ -8,6 +8,20 @@
     },
     "tools": [
       {
+        "name": "stdio.print",
+        "description": "Print a message to the ESP32's Serial output",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "message": {
+              "type": "string",
+              "description": "Message to print to Serial output"
+            }
+          },
+          "required": ["message"]
+        }
+      },
+      {
         "name": "relay.set",
         "description": "Turn a relay on or off",
         "parameters": {

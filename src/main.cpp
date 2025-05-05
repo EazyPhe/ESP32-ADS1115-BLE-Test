@@ -1,26 +1,26 @@
-#include <Wire.h>
-#include <Adafruit_ADS1X15.h>
-#include <BLEDevice.h>
-#include <BLEUtils.h>
-#include <BLEServer.h>
-#include <Preferences.h>
-#include <esp_log.h>
-#include <ArduinoOTA.h>
-#include <WiFi.h>
-#include <esp_sleep.h>
-#include <esp_task_wdt.h>
-#include <soc/rtc_wdt.h> // Added for RTC Watchdog control
-#include <esp_system.h>
-#include <rom/rtc.h>     // For crash diagnostics
-#include <ArduinoJson.h> // Added for JSON support
-#include "sampling_config.h"
-#include "config.h"
-#include "ble_module.h"
-#include "wifi_module.h"
-#include "adc_module.h"
-#include "relay_module.h"
-#include "ble_callbacks.h"
-#include "mcp_server.h"
+#include <Wire.h> // Provides I2C communication support for interfacing with ADS1115 ADC chips
+#include <Adafruit_ADS1X15.h> // Library for interacting with ADS1115 ADC chips for analog-to-digital conversion
+#include <BLEDevice.h> // Core library for setting up BLE functionality on the ESP32
+#include <BLEUtils.h> // Utility functions for BLE operations, such as UUID handling
+#include <BLEServer.h> // Enables the ESP32 to act as a BLE server
+#include <Preferences.h> // Provides non-volatile storage for saving and retrieving settings (e.g., WiFi credentials, relay states)
+#include <esp_log.h> // ESP-IDF logging library for structured logging and debugging
+#include <ArduinoOTA.h> // Enables Over-The-Air (OTA) firmware updates for the ESP32
+#include <WiFi.h> // Handles WiFi connectivity, including scanning, connecting, and managing access points
+#include <esp_sleep.h> // Provides functions for managing sleep modes to save power
+#include <esp_task_wdt.h> // Manages the Task Watchdog Timer to monitor and reset unresponsive tasks
+#include <soc/rtc_wdt.h> // Allows control over the RTC Watchdog Timer, which can cause resets during long tasks
+#include <esp_system.h> // Provides system-level functions, such as restarting the ESP32
+#include <rom/rtc.h> // Used for retrieving crash diagnostics and reset reasons
+#include <ArduinoJson.h> // Library for creating and parsing JSON, used for BLE data serialization
+#include "sampling_config.h" // Project-specific configuration for ADC sampling intervals and settings
+#include "config.h" // Contains system-wide constants and configuration values
+#include "ble_module.h" // Handles BLE initialization, services, and characteristics
+#include "wifi_module.h" // Manages WiFi connectivity, including AP mode and client mode
+#include "adc_module.h" // Provides functions for interacting with ADS1115 ADC chips and processing analog data
+#include "relay_module.h" // Controls GPIO pins connected to relays and manages their states
+#include "ble_callbacks.h" // Implements BLE command processing and characteristic callbacks
+#include "mcp_server.h" // Implements the MCP server for remote management and communication
 
 // Function prototypes for local functions only
 void monitorTask(void *pvParameters);
@@ -42,6 +42,10 @@ const int relayFeedbackLedPin = 33;
 // Define the global variable currentLogLevel to resolve the linker error
 LogLevel currentLogLevel = INFO_LEVEL;
 
+// Function to track MCP server state
+bool mcpServerStarted = false;
+SemaphoreHandle_t mcpServerMutex = NULL;
+
 // Failover/reconnect monitor task
 void monitorTask(void *pvParameters) {
     while (1) {
@@ -49,12 +53,34 @@ void monitorTask(void *pvParameters) {
         if (WiFi.status() != WL_CONNECTED) {
             String ssid = prefs.getString("ssid", "");
             String password = prefs.getString("password", "");
-            if (ssid != "" && password != "") { // Check both credentials
+            
+            // Take mutex before modifying MCP server state
+            if (xSemaphoreTake(mcpServerMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                if (mcpServerStarted) {
+                    mcpServerStarted = false; // Reset MCP server state
+                }
+                xSemaphoreGive(mcpServerMutex);
+            }
+            
+            if (ssid != "" && password != "") {
                 LOG_INFO("Reconnecting to WiFi: %s", ssid.c_str());
                 WiFi.disconnect();
                 WiFi.begin(ssid.c_str(), password.c_str());
+                // Wait a bit for connection
+                vTaskDelay(pdMS_TO_TICKS(5000));
             } else {
                 LOG_WARNING("WiFi credentials missing, skipping reconnect");
+                vTaskDelay(pdMS_TO_TICKS(5000));
+            }
+        } else {
+            // WiFi is connected but MCP server isn't running
+            if (xSemaphoreTake(mcpServerMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                if (!mcpServerStarted) {
+                    LOG_INFO("WiFi connected, starting MCP server");
+                    setupMcpServer();
+                    mcpServerStarted = true;
+                }
+                xSemaphoreGive(mcpServerMutex);
             }
         }
         
@@ -340,6 +366,17 @@ void setup() {
         ESP.restart();
     }
 
+    // Create mutex for MCP server state synchronization
+    mcpServerMutex = xSemaphoreCreateMutex();
+    if (mcpServerMutex == NULL) {
+        LOG_ERROR("Failed to create MCP server mutex!");
+        if (pRelayCharacteristic) {
+            pRelayCharacteristic->setValue("ERROR:RTOS:MCP_MUTEX_CREATE_FAIL");
+            pRelayCharacteristic->notify();
+        }
+        ESP.restart();
+    }
+
     // Create FreeRTOS tasks
     xTaskCreatePinnedToCore(dataTask, "DataTask", 4096, NULL, 3, NULL, 1);
     xTaskCreatePinnedToCore(bleTask, "BleTask", 4096, NULL, 2, NULL, 1);
@@ -350,7 +387,10 @@ void setup() {
 
     // Only start MCP server if WiFi is connected
     if (WiFi.status() == WL_CONNECTED) {
-        setupMcpServer();
+        // Set flag to indicate MCP server needs to be set up
+        // The monitorTask will handle setting up the MCP server
+        mcpServerStarted = false;
+        Serial.println("WiFi connected, MCP server will be started by monitorTask");
     } else {
         LOG_WARNING("MCP server not started: WiFi not connected");
     }
@@ -364,12 +404,12 @@ void loop() {
     if (isAPModeActive()) {
         handleWiFiConfig();
     }
-    // Power-saving: if no BLE connection is active, enter light sleep mode
-    else if (!deviceConnected) {
-        LOG_INFO("No BLE connection. Entering light sleep mode.");
+    // Only enter light sleep if both BLE and MCP are inactive
+    else if (!deviceConnected && !mcpServerStarted) {
+        LOG_INFO("No active connections. Entering light sleep mode.");
         esp_sleep_enable_timer_wakeup(1000000); // Wake up after 1 second
         esp_light_sleep_start();
         LOG_INFO("Woke from light sleep.");
     }
-    vTaskDelay(pdMS_TO_TICKS(1000)); // Use vTaskDelay instead of delay
+    vTaskDelay(pdMS_TO_TICKS(100)); // Reduced delay for better responsiveness
 }

@@ -80,28 +80,25 @@ void disconnectWifi() {
 }
 
 void connectToWifi(String ssid, String password) {
+    Serial.println("Connecting to WiFi network: " + ssid);
     WiFi.begin(ssid.c_str(), password.c_str());
-    unsigned long startTime = millis();
-    while (WiFi.status() != WL_CONNECTED && (millis() - startTime < 10000)) {
+    
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 20) {
         delay(500);
+        Serial.print(".");
+        attempts++;
     }
-    String statusMsg;
+    Serial.println("");
+    
     if (WiFi.status() == WL_CONNECTED) {
-        prefs.putString("ssid", ssid);
-        prefs.putString("password", password);
-        ArduinoOTA.begin();
-        int rssi = WiFi.RSSI();
-        statusMsg = String("WIFI_STATUS:CONNECTED:" + WiFi.SSID() + ":" + String(rssi));
+        Serial.println("WiFi connected!");
+        Serial.println("IP address: " + WiFi.localIP().toString());
+        Serial.println("Gateway: " + WiFi.gatewayIP().toString());
+        Serial.println("Subnet: " + WiFi.subnetMask().toString());
     } else {
-        statusMsg = String("WIFI_STATUS:FAILED:" + ssid);
-        if (pWifiCharacteristic) {
-            pWifiCharacteristic->setValue(String("ERROR:WIFI:CONNECT_FAIL:" + ssid).c_str());
-            pWifiCharacteristic->notify();
-        }
-    }
-    if (pWifiCharacteristic) {
-        pWifiCharacteristic->setValue(statusMsg.c_str());
-        pWifiCharacteristic->notify();
+        Serial.println("WiFi connection failed!");
+        Serial.println("Status code: " + String(WiFi.status()));
     }
 }
 
